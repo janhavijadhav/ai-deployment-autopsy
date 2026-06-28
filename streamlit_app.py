@@ -305,6 +305,7 @@ with st.sidebar:
         "Injection Console",
         "Chunk Lab",
         "Reranker Lab",
+        "Agent Delegation",
         "Latency Simulator",
         "Schema Drift",
         "Race Condition",
@@ -708,6 +709,378 @@ elif page == "Reranker Lab":
       <strong>Graceful degradation:</strong> If the model is unavailable (no weights, OOM), retriever automatically falls back to RRF-only — zero downtime.<br>
       <strong>Observability:</strong> Both <code>cross_encoder_score</code> and original <code>rrf_score</code> are stored in chunk metadata for LangFuse comparison.
     </div>""", unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: AGENT DELEGATION
+# Inline routing logic (mirrors src/agent/supervisor.py) — self-contained so
+# the Streamlit demo runs without installing heavy LangGraph/Anthropic deps.
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "Agent Delegation":
+    # ── Inline specialist registry (mirrors src/agent/supervisor.SPECIALISTS) ──
+    _SPECS = {
+        "contract_analyst": {
+            "name": "Contract Analyst", "color": "#4a9eff", "icon": "📄",
+            "desc": "Contract clauses, SLA terms, penalty schedules, renewal dates",
+            "tools": ["search_contracts", "get_contract_metadata"],
+            "kw": ["contract","clause","sla","penalty","penalt","terms","renewal",
+                   "expir","terminat","amend","payment","warranty","late","delay",
+                   "net-","force majeure","liability","indemnif"],
+        },
+        "supplier_risk": {
+            "name": "Supplier Risk", "color": "#ff4b4b", "icon": "⚠️",
+            "desc": "Risk scoring, delivery performance, geopolitical exposure, disputes",
+            "tools": ["lookup_supplier","search_suppliers_by_criteria","flag_supplier_risks"],
+            "kw": ["risk","supplier","vendor","delivery","performance","on-time","on time",
+                   "probation","flag","alert","exposure","sanction","certif","audit",
+                   "compliance","quality","rejection","dispute","apex","brightfield",
+                   "dalton","coretech","pinnacle","sup-","tier-"],
+        },
+        "spend_analytics": {
+            "name": "Spend Analytics", "color": "#21c354", "icon": "📊",
+            "desc": "Spend analysis, savings opportunities, budget forecasting, KPIs",
+            "tools": ["get_procurement_analytics"],
+            "kw": ["spend","saving","budget","forecast","trend","analytics","cost",
+                   "price","quarter","annual","q1","q2","q3","q4","ytd","monthly",
+                   "kpi","report","total","rebate","discount","opportunit","dashboard"],
+        },
+    }
+
+    def _classify(query):
+        q = query.lower()
+        hits = {}
+        for sid, sp in _SPECS.items():
+            m = [kw for kw in sp["kw"] if kw in q]
+            if m:
+                hits[sid] = m
+        if not hits:
+            return {"specialists":["contract_analyst"],"primary":"contract_analyst",
+                    "reasoning":"No strong domain signal — defaulting to Contract Analyst.",
+                    "confidence":0.45,"multi_agent":False,"keywords_matched":[]}
+        ranked = sorted(hits.items(), key=lambda x: len(x[1]), reverse=True)
+        top = len(ranked[0][1])
+        sel = [s for s,kws in ranked if len(kws) >= max(1, top//2)]
+        all_kw = [kw for _,kws in ranked for kw in kws]
+        primary = ranked[0][0]
+        if len(sel)==1:
+            spec = _SPECS[primary]
+            _kw_str = ", ".join(f'"{k}"' for k in hits[primary][:4])
+            return {"specialists":sel,"primary":primary,
+                    "reasoning": (f"Query clearly targets the {spec['name']} domain. "
+                                  f"Matched keywords: {_kw_str}. "
+                                  f"Single-specialist delegation — no synthesis needed."),
+                    "confidence": min(0.65+len(hits[primary])*0.06, 0.97),
+                    "multi_agent":False,"keywords_matched":all_kw}
+        names = " + ".join(_SPECS[s]["name"] for s in sel)
+        _kw_str2 = ", ".join(f'"{k}"' for k in all_kw[:5])
+        return {"specialists":sel,"primary":primary,
+                "reasoning": (f"Cross-domain query — signals from {len(sel)} specialist domains. "
+                              f"Delegating to {names} in parallel. "
+                              f"Matched: {_kw_str2}. "
+                              f"Synthesizer will merge outputs."),
+                "confidence": min(0.70+len(all_kw)*0.03, 0.96),
+                "multi_agent":True,"keywords_matched":all_kw}
+
+    # ── Inline simulation responses ─────────────────────────────────────────────
+    def _sim_contract(q):
+        if any(w in q for w in ["penalt","delay","late"]):
+            return ("**Contract Analyst — Penalty Clause Analysis**\n\n"
+                    "Source: CTR-00001 (Apex Industries), Section 8.2\n\n"
+                    "| Window | Rate |\n|---|---|\n"
+                    "| Days 1–30 | 0.5% / week |\n"
+                    "| Days 31–60 | 1.5% / week (compounded) |\n"
+                    "| Day 61+ | 3.0% / week + right to terminate |\n\n"
+                    "**Risk Note:** Day 61+ includes consequential loss recovery (§8.2.4) — "
+                    "non-standard for Tier-2. Flagging for next renewal review.",
+                    ["CTR-00001 §8.2","CTR-00001 §8.2.4"],["search_contracts"])
+        elif any(w in q for w in ["expir","renew","terminat"]):
+            return ("**Contract Analyst — Expiry & Renewal Report**\n\n"
+                    "• **CTR-00001** (Apex) — Expires 2024-12-31. Auto-renewal §14.1. "
+                    "Notice window opens **Sep 1** — action required.\n"
+                    "• **CTR-00003** (Dalton) — Expires 2024-06-30 ⚠️ Probation — renewal not recommended.\n"
+                    "• **CTR-00002** (Brightfield) — Expires 2025-03-31. Normal cycle.",
+                    ["CTR-00001 §14.1","CTR-00003 §14.1"],["search_contracts","get_contract_metadata"])
+        elif any(w in q for w in ["payment","net","invoice"]):
+            return ("**Contract Analyst — Payment Terms**\n\n"
+                    "| Supplier | Terms | Early Pay |\n|---|---|---|\n"
+                    "| Apex (CTR-00001) | Net-60 | 2% if Net-10 |\n"
+                    "| Brightfield (CTR-00002) | Net-45 | None |\n"
+                    "| Dalton (CTR-00003) | Net-30 | None |\n\n"
+                    "Savings insight: capturing Apex early-pay = **$568K/year** (§9.1.3).",
+                    ["CTR-00001 §9.1","CTR-00002 §9.1"],["search_contracts"])
+        return ("**Contract Analyst — Clause Search**\n\n"
+                "• CTR-00001 §4.3: Force majeure covers disruption > 14 days, 48h notification.\n"
+                "• CTR-00002 §7.1: SLA uptime 99.5%/month — breach triggers 10% invoice credit.\n"
+                "• CTR-00001 §11.2: Custom tooling IP reverts to Meridian on contract end.",
+                ["CTR-00001 §4.3","CTR-00002 §7.1"],["search_contracts"])
+
+    def _sim_risk(q):
+        if any(w in q for w in ["apex","sup-0001"]):
+            return ("**Supplier Risk — Apex Industries (SUP-0001)**\n\n"
+                    "Risk Score: **0.82** 🔴 CRITICAL\n\n"
+                    "1. Delivery 87% (SLA 95%) — Q3 worst in 3 quarters\n"
+                    "2. CN geopolitical exposure — Section 301 tariff review active\n"
+                    "3. Financial: revenue −12% YoY, D/E ratio 2.3× (threshold 1.5×)\n\n"
+                    "**Action: ESCALATE** — Activate dual-sourcing. Brief CPO in 48h.",
+                    ["SUP-0001","RISK-SUP-0001-HIGH"],["lookup_supplier","flag_supplier_risks"])
+        elif any(w in q for w in ["dalton","probation","sup-0003"]):
+            return ("**Supplier Risk — Dalton Materials (SUP-0003)**\n\n"
+                    "Risk Score: **0.67** 🟡 HIGH | Status: PROBATION\n\n"
+                    "1. Quality rejection 9.0% (threshold 2.0%) — 4.5× above limit\n"
+                    "2. 4 open disputes ($1.2M total)\n"
+                    "3. On-time delivery 71% — worst in portfolio\n\n"
+                    "**Action: SUSPEND NEW POs** pending Q3 quality audit (Sep 30).",
+                    ["SUP-0003","RISK-SUP-0003-QUALITY"],["lookup_supplier","flag_supplier_risks"])
+        return ("**Supplier Risk — Portfolio Overview**\n\n"
+                "| Supplier | Risk | Tier | On-Time |\n|---|---|---|---|\n"
+                "| Apex Industries | 0.82 | 🔴 CRITICAL | 87% |\n"
+                "| Dalton Materials | 0.67 | 🟡 HIGH | 71% |\n"
+                "| Pinnacle Logistics | 0.44 | 🟡 MOD | 89% |\n"
+                "| CoreTech Systems | 0.33 | 🟢 LOW | 93% |\n"
+                "| Brightfield | 0.21 | 🟢 LOW | 97% |\n\n"
+                "At-risk spend: **$37.5M** (Apex $28.4M + Dalton $9.1M)",
+                ["SUP-0001","SUP-0003"],["search_suppliers_by_criteria","flag_supplier_risks"])
+
+    def _sim_spend(q):
+        if any(w in q for w in ["saving","opportunit","rebate","discount"]):
+            return ("**Spend Analytics — Savings Opportunities**\n\n"
+                    "Total addressable: **$4.2M** (1.75% of spend)\n\n"
+                    "1. Early pay capture (Apex) — **$568K**\n"
+                    "2. Electronics volume consolidation — **$1.8M**\n"
+                    "3. Pinnacle rebate trigger ($1.3M to threshold) — **$890K**\n"
+                    "4. Dalton replacement net savings — **$960K**",
+                    ["SAVINGS-Q3-2024"],["get_procurement_analytics"])
+        elif any(w in q for w in ["spend","budget","ytd","total","annual"]):
+            return ("**Spend Analytics — YTD 2024**\n\n"
+                    "Total: **$1.82B** / $2.4B budget (76%)\n\n"
+                    "| Supplier | YTD | YoY |\n|---|---|---|\n"
+                    "| Brightfield | $41.2M | ↑8% |\n"
+                    "| Pinnacle | $28.7M | ↑3% |\n"
+                    "| Apex | $23.1M | ↓14% |\n"
+                    "| CoreTech | $15.2M | →0% |\n"
+                    "| Dalton | $6.9M | ↓24% |\n\n"
+                    "Full-year forecast: **$2.35B** (2% under budget)",
+                    ["SPEND-YTD-2024"],["get_procurement_analytics"])
+        return ("**Spend Analytics — 30-Day KPIs**\n\n"
+                "| KPI | Value |\n|---|---|\n"
+                "| Total spend | $152M |\n| POs issued | 1,247 |\n"
+                "| Contract coverage | 94.2% ↑ |\n| Savings rate | 1.38% ↑ |\n"
+                "| On-time payment | 96.4% |\n\n"
+                "Insight: Contract coverage improving — spot buy down 2.3pp.",
+                ["KPI-LAST-30-DAYS"],["get_procurement_analytics"])
+
+    _SIM_FNS = {
+        "contract_analyst": _sim_contract,
+        "supplier_risk": _sim_risk,
+        "spend_analytics": _sim_spend,
+    }
+
+    # ── Page header ─────────────────────────────────────────────────────────────
+    st.markdown("""
+    <div class="fm-header">
+      <div class="fm-eyebrow">TECH STACK — LANGGRAPH DEPTH</div>
+      <div class="fm-title">Agent Delegation</div>
+      <div class="fm-sub">Supervisor agent classifies every query and routes it to the right specialist — or fans out to multiple in parallel for cross-domain questions.</div>
+    </div>""", unsafe_allow_html=True)
+
+    # ── Architecture diagram ────────────────────────────────────────────────────
+    st.markdown("""
+    <div style="background:#1a1d2e;border:1px solid #2d3250;border-radius:12px;padding:20px;margin-bottom:20px">
+      <div style="font-size:10px;color:#4a9eff;font-weight:700;letter-spacing:1.5px;margin-bottom:14px">LANGGRAPH TOPOLOGY</div>
+      <div style="display:flex;align-items:center;gap:0;justify-content:center;flex-wrap:wrap;gap:8px">
+
+        <div style="background:#4a9eff18;border:1.5px solid #4a9eff55;border-radius:8px;padding:10px 16px;text-align:center;min-width:100px">
+          <div style="font-size:9px;color:#4a9eff;font-weight:700;letter-spacing:1px">START</div>
+          <div style="font-size:11px;font-weight:700;margin-top:2px">User Query</div>
+        </div>
+
+        <div style="color:#4a9eff;font-size:18px;font-weight:300">→</div>
+
+        <div style="background:#ff990018;border:2px solid #ff9900;border-radius:8px;padding:10px 16px;text-align:center;min-width:110px">
+          <div style="font-size:9px;color:#ff9900;font-weight:700;letter-spacing:1px">SUPERVISOR</div>
+          <div style="font-size:11px;font-weight:700;margin-top:2px">Route Query</div>
+          <div style="font-size:9px;opacity:.5;margin-top:2px">classify + delegate</div>
+        </div>
+
+        <div style="color:#4a9eff;font-size:14px;font-weight:300">→ Send()</div>
+
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="background:#4a9eff18;border:1px solid #4a9eff55;border-radius:6px;padding:7px 12px;text-align:center">
+            <div style="font-size:9px;color:#4a9eff;font-weight:700">CONTRACT ANALYST</div>
+            <div style="font-size:10px;opacity:.6">clauses · SLA · penalties</div>
+          </div>
+          <div style="background:#ff4b4b18;border:1px solid #ff4b4b55;border-radius:6px;padding:7px 12px;text-align:center">
+            <div style="font-size:9px;color:#ff4b4b;font-weight:700">SUPPLIER RISK</div>
+            <div style="font-size:10px;opacity:.6">risk · delivery · disputes</div>
+          </div>
+          <div style="background:#21c35418;border:1px solid #21c35455;border-radius:6px;padding:7px 12px;text-align:center">
+            <div style="font-size:9px;color:#21c354;font-weight:700">SPEND ANALYTICS</div>
+            <div style="font-size:10px;opacity:.6">spend · savings · forecast</div>
+          </div>
+        </div>
+
+        <div style="color:#4a9eff;font-size:14px;font-weight:300">→</div>
+
+        <div style="background:#21c35418;border:1.5px solid #21c35455;border-radius:8px;padding:10px 16px;text-align:center;min-width:100px">
+          <div style="font-size:9px;color:#21c354;font-weight:700;letter-spacing:1px">SYNTHESIZER</div>
+          <div style="font-size:11px;font-weight:700;margin-top:2px">Merge & END</div>
+          <div style="font-size:9px;opacity:.5;margin-top:2px">multi-specialist only</div>
+        </div>
+
+      </div>
+    </div>""", unsafe_allow_html=True)
+
+    # ── Example queries ─────────────────────────────────────────────────────────
+    EXAMPLE_QUERIES = [
+        ("What are Apex's penalty clauses?",                       "contract_analyst"),
+        ("Show all high-risk suppliers above 0.7",                 "supplier_risk"),
+        ("What's our YTD spend and savings opportunities?",        "spend_analytics"),
+        ("Apex penalty terms AND their risk score — full picture", "contract_analyst+supplier_risk"),
+        ("Contract expiry, risk scores, and Q4 spend forecast",    "all three"),
+    ]
+
+    st.markdown("#### Run the Supervisor")
+    ex_cols = st.columns(len(EXAMPLE_QUERIES))
+    for i, (ex_q, _) in enumerate(EXAMPLE_QUERIES):
+        if ex_cols[i].button(ex_q[:30]+"…" if len(ex_q)>30 else ex_q,
+                             key=f"del_ex_{i}", use_container_width=True, help=ex_q):
+            st.session_state["del_query"] = ex_q
+
+    user_del_q = st.text_input(
+        "Or type your own query",
+        value=st.session_state.get("del_query", "What are Apex's penalty clauses for late delivery?"),
+        key="del_query_input",
+        label_visibility="collapsed",
+        placeholder="Ask anything about contracts, suppliers, spend…",
+    )
+
+    if user_del_q:
+        decision = _classify(user_del_q)
+        specialists = decision["specialists"]
+        primary = decision["primary"]
+        multi = decision["multi_agent"]
+
+        # ── Step 1: Supervisor decision ────────────────────────────────────────
+        st.markdown("---")
+        conf_color = "#21c354" if decision["confidence"]>0.75 else "#ff9900" if decision["confidence"]>0.55 else "#ff4b4b"
+        st.markdown(f"""
+        <div style="background:#ff990012;border:1px solid #ff990044;border-radius:10px;padding:16px;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div>
+              <span style="font-size:10px;color:#ff9900;font-weight:700;letter-spacing:1.5px">STEP 1 — SUPERVISOR NODE</span>
+              <span style="margin-left:10px;font-size:11px;background:#ff990022;color:#ff9900;padding:2px 8px;border-radius:10px;font-weight:700">{"MULTI-AGENT FAN-OUT" if multi else "SINGLE SPECIALIST"}</span>
+            </div>
+            <span style="font-size:11px;font-family:monospace;color:{conf_color};font-weight:700">confidence {decision['confidence']:.0%}</span>
+          </div>
+          <div style="font-size:12px;line-height:1.6;opacity:.85">{decision['reasoning']}</div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+            {"".join(f'<span style="background:{_SPECS[s]["color"]}22;color:{_SPECS[s]["color"]};border:1px solid {_SPECS[s]["color"]}55;border-radius:12px;padding:3px 10px;font-size:11px;font-weight:700">{_SPECS[s]["icon"]} {_SPECS[s]["name"]}</span>' for s in specialists)}
+          </div>
+        </div>""", unsafe_allow_html=True)
+
+        # ── Step 2: Specialist responses ──────────────────────────────────────
+        st.markdown(f"""<div style="font-size:10px;color:#4a9eff;font-weight:700;letter-spacing:1.5px;margin-bottom:8px">
+        STEP 2 — SPECIALIST NODE{"S (PARALLEL)" if multi else ""}</div>""", unsafe_allow_html=True)
+
+        results = {}
+        q_lower = user_del_q.lower()
+        if multi:
+            cols = st.columns(len(specialists))
+            for i, sid in enumerate(specialists):
+                ans, srcs, tools = _SIM_FNS[sid](q_lower)
+                results[sid] = ans
+                spec = _SPECS[sid]
+                with cols[i]:
+                    st.markdown(f"""
+                    <div style="background:{spec['color']}0d;border:1px solid {spec['color']}44;border-radius:8px;padding:12px;margin-bottom:8px">
+                      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                        <span style="font-size:10px;color:{spec['color']};font-weight:700;letter-spacing:1px">{spec['icon']} {spec['name'].upper()}</span>
+                        <span style="font-size:9px;font-family:monospace;color:{spec['color']}88">{len(tools)} tool(s)</span>
+                      </div>
+                      <div style="font-size:10px;opacity:.55;margin-bottom:6px">Tools: {', '.join(f'<code>{t}</code>' for t in tools)}</div>
+                      <div style="font-size:10px;opacity:.55">Sources: {' · '.join(srcs[:2])}</div>
+                    </div>""", unsafe_allow_html=True)
+                    with st.expander(f"View {spec['name']} response"):
+                        st.markdown(ans)
+        else:
+            sid = specialists[0]
+            ans, srcs, tools = _SIM_FNS[sid](q_lower)
+            results[sid] = ans
+            spec = _SPECS[sid]
+            st.markdown(f"""
+            <div style="background:{spec['color']}0d;border:1px solid {spec['color']}44;border-radius:8px;padding:14px;margin-bottom:10px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <span style="font-size:10px;color:{spec['color']};font-weight:700;letter-spacing:1px">{spec['icon']} {spec['name'].upper()} — ACTIVE</span>
+                <span style="font-size:10px;font-family:monospace;color:{spec['color']}88">Tools: {', '.join(tools)}</span>
+              </div>
+              <div style="font-size:11px;opacity:.6">Sources cited: {' · '.join(srcs)}</div>
+            </div>""", unsafe_allow_html=True)
+            st.markdown(ans)
+
+        # ── Step 3: Synthesizer ────────────────────────────────────────────────
+        if multi:
+            st.markdown("---")
+            st.markdown("""<div style="font-size:10px;color:#21c354;font-weight:700;letter-spacing:1.5px;margin-bottom:8px">STEP 3 — SYNTHESIZER NODE</div>""", unsafe_allow_html=True)
+            names = " + ".join(_SPECS[s]["name"] for s in specialists)
+            header = f"*Cross-domain analysis — {len(specialists)} specialists consulted in parallel: {names}*\n\n"
+            merged_parts = []
+            for sid in specialists:
+                merged_parts.append(f"**{_SPECS[sid]['name']}:**\n\n{results[sid]}")
+            merged = header + "\n\n---\n\n".join(merged_parts)
+            with st.container():
+                st.markdown(f"""
+                <div style="background:#21c35410;border:1px solid #21c35444;border-radius:8px;padding:12px;margin-bottom:8px">
+                  <span style="font-size:10px;color:#21c354;font-weight:700">Synthesizing {len(specialists)} specialist outputs into unified response</span>
+                </div>""", unsafe_allow_html=True)
+                st.markdown(merged)
+        else:
+            st.markdown("---")
+            st.markdown("""<div style="font-size:10px;color:#21c354;font-weight:700;letter-spacing:1.5px;margin-bottom:6px">STEP 3 — SYNTHESIZER NODE (pass-through)</div>""", unsafe_allow_html=True)
+            st.markdown('<div style="font-size:11px;opacity:.5;margin-bottom:8px">Single specialist — synthesizer passes response through unchanged. No merge step needed.</div>', unsafe_allow_html=True)
+
+        # ── Delegation trace ───────────────────────────────────────────────────
+        st.divider()
+        with st.expander("View delegation trace (what LangFuse captures)"):
+            trace = [
+                {"node": "supervisor", "decision": specialists, "confidence": f"{decision['confidence']:.2f}",
+                 "multi_agent": multi, "keywords": decision["keywords_matched"][:5]},
+            ]
+            for sid in specialists:
+                trace.append({"node": f"{sid}_node", "specialist": _SPECS[sid]["name"],
+                              "tools_called": _SIM_FNS[sid](q_lower)[2],
+                              "sources": _SIM_FNS[sid](q_lower)[1][:2]})
+            trace.append({"node": "synthesizer", "specialists_merged": specialists, "output": "final_response"})
+            st.json(trace)
+
+    st.divider()
+    # ── Code insight ────────────────────────────────────────────────────────────
+    st.markdown("#### How Multi-Specialist Fan-out Works")
+    st.code("""# src/agent/multi_agent_graph.py
+
+def route_after_supervisor(state: MultiAgentState) -> list[Send]:
+    \"\"\"
+    Conditional edge after supervisor_node.
+    Returns Send objects — LangGraph runs them in PARALLEL
+    and auto-joins state before synthesizer fires.
+    \"\"\"
+    specialists = state["supervisor_decision"]["specialists"]
+    node_map = {
+        "contract_analyst": "contract_analyst_node",
+        "supplier_risk":    "supplier_risk_node",
+        "spend_analytics":  "spend_analytics_node",
+    }
+    # Each Send() gets a COPY of state — no locking needed
+    return [Send(node_map[s], state) for s in specialists]
+
+# Graph wiring:
+graph.add_conditional_edges("supervisor", route_after_supervisor,
+    ["contract_analyst_node", "supplier_risk_node", "spend_analytics_node"])
+
+# All specialists converge at synthesizer (LangGraph handles the join)
+graph.add_edge("contract_analyst_node", "synthesizer")
+graph.add_edge("supplier_risk_node",    "synthesizer")
+graph.add_edge("spend_analytics_node",  "synthesizer")
+""", language="python")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1200,9 +1573,39 @@ SUPPLIER DATA: {json.dumps(SUPPLIERS_DATA)}"""
                 st.session_state["pending_query"] = ex
                 st.rerun()
 
+    # ── Inline supervisor for chat routing badges ──────────────────────────────
+    _CHAT_SPECS = {
+        "contract_analyst": {"name":"Contract Analyst","color":"#4a9eff","icon":"📄",
+            "kw":["contract","clause","sla","penalty","penalt","terms","renewal","expir",
+                  "terminat","amend","payment","warranty","late","delay","net-","force majeure"]},
+        "supplier_risk":    {"name":"Supplier Risk","color":"#ff4b4b","icon":"⚠️",
+            "kw":["risk","supplier","vendor","delivery","performance","on-time","probation",
+                  "flag","alert","exposure","quality","rejection","dispute","apex","brightfield",
+                  "dalton","coretech","pinnacle","sup-"]},
+        "spend_analytics":  {"name":"Spend Analytics","color":"#21c354","icon":"📊",
+            "kw":["spend","saving","budget","forecast","trend","analytics","cost","quarter",
+                  "annual","ytd","kpi","report","total","rebate","discount","opportunit"]},
+    }
+    def _chat_route(query):
+        q = query.lower()
+        hits = {sid: [kw for kw in sp["kw"] if kw in q] for sid,sp in _CHAT_SPECS.items()}
+        hits = {k:v for k,v in hits.items() if v}
+        if not hits:
+            return ["contract_analyst"]
+        ranked = sorted(hits.items(), key=lambda x: len(x[1]), reverse=True)
+        top = len(ranked[0][1])
+        return [s for s,kws in ranked if len(kws) >= max(1,top//2)]
+
     for msg in st.session_state["messages"]:
-        with st.chat_message(msg["role"], avatar="🏭" if msg["role"]=="assistant" else "👤"):
-            st.markdown(msg["content"])
+        if msg["role"] == "assistant":
+            spec_id = msg.get("specialist", "contract_analyst")
+            spec = _CHAT_SPECS.get(spec_id, _CHAT_SPECS["contract_analyst"])
+            with st.chat_message("assistant", avatar="🏭"):
+                st.markdown(f'<div style="margin-bottom:6px"><span style="background:{spec["color"]}22;color:{spec["color"]};border:1px solid {spec["color"]}55;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700;letter-spacing:.5px">{spec["icon"]} {spec["name"]}</span></div>', unsafe_allow_html=True)
+                st.markdown(msg["content"])
+        else:
+            with st.chat_message(msg["role"], avatar="👤"):
+                st.markdown(msg["content"])
 
     active_prompt = None
     add_to_history = True
@@ -1221,11 +1624,21 @@ SUPPLIER DATA: {json.dumps(SUPPLIERS_DATA)}"""
             st.session_state["messages"].append({"role": "user", "content": active_prompt})
             with st.chat_message("user", avatar="👤"):
                 st.markdown(active_prompt)
+
+        # Show routing decision before LLM responds
+        routed_to = _chat_route(active_prompt)
+        primary_spec = routed_to[0]
+        spec_info = _CHAT_SPECS[primary_spec]
+        multi_chat = len(routed_to) > 1
+        routing_msg = (f"Routing to **{' + '.join(_CHAT_SPECS[s]['name'] for s in routed_to)}**"
+                       if multi_chat else f"Routing to **{spec_info['name']}**")
+
         with st.chat_message("assistant", avatar="🏭"):
+            st.markdown(f'<div style="margin-bottom:8px"><span style="background:{spec_info["color"]}22;color:{spec_info["color"]};border:1px solid {spec_info["color"]}55;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700;letter-spacing:.5px">{spec_info["icon"]} {spec_info["name"]}{"  +  " + " + ".join(_CHAT_SPECS[s]["name"] for s in routed_to[1:]) if multi_chat else ""}</span>  <span style="font-size:10px;opacity:.4">{routing_msg}</span></div>', unsafe_allow_html=True)
             placeholder = st.empty()
             full, start = "", time.time()
             try:
-                from groq import Groq, AuthenticationError as GroqAuthError
+                from groq import Groq
                 client = Groq(api_key=api_key)
                 stream = client.chat.completions.create(
                     model="llama-3.3-70b-versatile", max_tokens=1024,
@@ -1238,11 +1651,11 @@ SUPPLIER DATA: {json.dumps(SUPPLIERS_DATA)}"""
                         full += d
                         placeholder.markdown(full + "▌")
                 placeholder.markdown(full)
-                st.caption(f"{(time.time()-start)*1000:.0f}ms · llama-3.3-70b-versatile (Groq)")
+                st.caption(f"{(time.time()-start)*1000:.0f}ms · llama-3.3-70b-versatile · routed via supervisor")
             except Exception as e:
                 st.error(f"Error: {e}")
                 st.stop()
-        st.session_state["messages"].append({"role":"assistant","content":full})
+        st.session_state["messages"].append({"role":"assistant","content":full,"specialist":primary_spec})
 
     if st.session_state.get("messages"):
         if st.button("Clear conversation"):
