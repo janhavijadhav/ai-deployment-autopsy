@@ -325,9 +325,7 @@ with st.sidebar:
             unsafe_allow_html=True)
 
     st.divider()
-    api_key = st.text_input("Groq API Key", type="password", placeholder="gsk_...",
-                            value=st.secrets.get("GROQ_API_KEY", ""))
-    st.caption("Free → [console.groq.com](https://console.groq.com)")
+    api_key = st.secrets.get("GROQ_API_KEY", "")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1012,7 +1010,7 @@ SUPPLIER DATA: {json.dumps(SUPPLIERS_DATA)}"""
 
     if active_prompt:
         if not api_key:
-            st.error("Add your Groq API key in the sidebar. Free at console.groq.com")
+            st.error("Agent Chat requires a Groq API key. Add GROQ_API_KEY to Streamlit secrets.")
             st.stop()
         if add_to_history:
             st.session_state["messages"].append({"role": "user", "content": active_prompt})
