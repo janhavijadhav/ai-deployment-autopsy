@@ -542,14 +542,7 @@ elif page == "Reranker Lab":
 
     st.divider()
 
-    # ── The concrete failure scenario ─────────────────────────────────────────
-    st.markdown("#### The Classic Keyword-Collision Scenario")
-    st.markdown("""
-    <div style="background:#1a1d2e;border:1px solid #2d3250;border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px">
-      <span style="color:#4a9eff;font-weight:700">Query:</span>
-      <span style="font-family:monospace;background:#4a9eff18;border-radius:4px;padding:2px 8px;margin-left:6px">"What is the penalty for delivery delays <strong>beyond 60 days</strong>?"</span>
-    </div>""", unsafe_allow_html=True)
-
+    # ── Contract chunks (fixed RRF retrieval result) ──────────────────────────
     RERANK_CHUNKS = [
         {
             "chunk_id": "C1",
@@ -557,8 +550,6 @@ elif page == "Reranker Lab":
             "content": "Late delivery penalty schedule — Day 31 through 60: 1.5% of total invoice value per calendar week of delay, compounded weekly.",
             "rrf_rank": 1,
             "rrf_score": 0.0323,
-            "why_rrf_high": 'BM25 keyword "60" collision — this chunk ranks #1 despite being the WRONG answer',
-            "ce_score": -0.84,
         },
         {
             "chunk_id": "C2",
@@ -566,8 +557,6 @@ elif page == "Reranker Lab":
             "content": "Escalated delay penalties — Day 61 and beyond: 3.0% of total invoice value per calendar week, plus Meridian retains the right to terminate the contract with immediate effect and recover all consequential losses.",
             "rrf_rank": 2,
             "rrf_score": 0.0298,
-            "why_rrf_high": "Correct answer — contains 'beyond' — but BM25 scores lower than 'Day 31-60' chunk",
-            "ce_score": 2.71,
         },
         {
             "chunk_id": "C3",
@@ -575,8 +564,6 @@ elif page == "Reranker Lab":
             "content": "A 5-business-day grace period applies to all deliveries before any late penalty accrues. Grace periods do not stack across multiple delayed shipments.",
             "rrf_rank": 3,
             "rrf_score": 0.0251,
-            "why_rrf_high": "Contextually related to delivery delays",
-            "ce_score": 0.33,
         },
         {
             "chunk_id": "C4",
@@ -584,8 +571,6 @@ elif page == "Reranker Lab":
             "content": "Penalties are waived during force majeure events as defined in Section 18. Supplier must notify Meridian within 48 hours of the triggering event.",
             "rrf_rank": 4,
             "rrf_score": 0.0214,
-            "why_rrf_high": "Contains 'penalty' — keyword overlap",
-            "ce_score": -1.22,
         },
         {
             "chunk_id": "C5",
@@ -593,104 +578,150 @@ elif page == "Reranker Lab":
             "content": "Standard payment terms: Net-60. Early payment discount of 2% applies if settled within 10 days of invoice receipt.",
             "rrf_rank": 5,
             "rrf_score": 0.0187,
-            "why_rrf_high": 'BM25 matched "60" in "Net-60" — pure noise',
-            "ce_score": -2.89,
         },
     ]
 
-    # Sort by cross-encoder score for the "after" view
-    ce_sorted = sorted(RERANK_CHUNKS, key=lambda x: x["ce_score"], reverse=True)
+    # ── Session state ─────────────────────────────────────────────────────────
+    if "rr_query" not in st.session_state:
+        st.session_state["rr_query"] = "What is the penalty for delivery delays beyond 60 days?"
 
-    col_before, col_after = st.columns(2)
-
-    with col_before:
-        st.markdown("""<div style="font-size:10px;color:#ff4b4b;font-weight:700;letter-spacing:1px;margin-bottom:10px">BEFORE RERANKING — RRF ORDER</div>""", unsafe_allow_html=True)
-        for i, chunk in enumerate(RERANK_CHUNKS):
-            is_correct = chunk["chunk_id"] == "C2"
-            border_color = "#21c35444" if is_correct else "#2d3250"
-            bg_color = "#21c35408" if is_correct else "#1a1d2e"
-            rank_color = "#ff4b4b" if i == 0 and not is_correct else ("#21c354" if is_correct else "#4a9eff88")
-            st.markdown(f"""
-            <div style="background:{bg_color};border:1px solid {border_color};border-radius:8px;padding:12px;margin-bottom:8px">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-                <div>
-                  <span style="font-size:10px;font-weight:800;color:{rank_color};letter-spacing:1px">RANK #{chunk['rrf_rank']}</span>
-                  <span style="font-size:11px;font-weight:700;margin-left:8px">{chunk['label']}</span>
-                </div>
-                <span style="font-size:10px;font-family:monospace;color:#4a9eff88">RRF {chunk['rrf_score']:.4f}</span>
-              </div>
-              <div style="font-size:11px;opacity:.7;line-height:1.5;margin-bottom:6px">{chunk['content'][:120]}…</div>
-              <div style="font-size:10px;color:{"#ff4b4b" if "WRONG" in chunk["why_rrf_high"] or "noise" in chunk["why_rrf_high"] else "#4a9eff88"};font-style:italic">{chunk['why_rrf_high']}</div>
-            </div>""", unsafe_allow_html=True)
-
-    with col_after:
-        st.markdown("""<div style="font-size:10px;color:#21c354;font-weight:700;letter-spacing:1px;margin-bottom:10px">AFTER RERANKING — CROSS-ENCODER ORDER</div>""", unsafe_allow_html=True)
-        for i, chunk in enumerate(ce_sorted):
-            is_correct = chunk["chunk_id"] == "C2"
-            is_promoted = is_correct and i == 0
-            border_color = "#21c35488" if is_correct else "#2d3250"
-            bg_color = "#21c35412" if is_correct else "#1a1d2e"
-            score_color = "#21c354" if chunk["ce_score"] > 0 else "#ff4b4b"
-            st.markdown(f"""
-            <div style="background:{bg_color};border:1px solid {border_color};border-radius:8px;padding:12px;margin-bottom:8px{';box-shadow:0 0 12px #21c35422' if is_promoted else ''}">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-                <div>
-                  <span style="font-size:10px;font-weight:800;color:{'#21c354' if is_correct else '#4a9eff88'};letter-spacing:1px">RANK #{i+1}{'  PROMOTED' if is_promoted else ''}</span>
-                  <span style="font-size:11px;font-weight:700;margin-left:8px">{chunk['label']}</span>
-                </div>
-                <span style="font-size:10px;font-family:monospace;color:{score_color};font-weight:700">CE {chunk['ce_score']:+.2f}</span>
-              </div>
-              <div style="font-size:11px;opacity:.7;line-height:1.5">{chunk['content'][:120]}…</div>
-              {'<div style="font-size:10px;color:#21c354;font-weight:700;margin-top:6px">Correct answer now at rank #1</div>' if is_promoted else ''}
-            </div>""", unsafe_allow_html=True)
-
-    st.divider()
-
-    # ── Live interactive demo ─────────────────────────────────────────────────
-    st.markdown("#### Try Your Own Query")
-    st.markdown('<div style="font-size:12px;opacity:.5;margin-bottom:10px">Enter a query to see Jaccard-based simulation (no model weights needed) rerank these 5 contract chunks in real time.</div>', unsafe_allow_html=True)
-
-    user_query = st.text_input(
-        "Query",
-        value="What is the penalty for delivery delays beyond 60 days?",
-        label_visibility="collapsed",
+    # ── Interactive query input ───────────────────────────────────────────────
+    st.markdown("#### Live Reranking Demo")
+    st.markdown(
+        '<div style="font-size:12px;opacity:.5;margin-bottom:12px">'
+        "Type a query or pick an example — the right column reranks live "
+        "using Jaccard simulation (same ranking signal as BAAI/bge-reranker-v2-m3, no model weights needed)."
+        "</div>",
+        unsafe_allow_html=True,
     )
 
-    if user_query:
-        import re as _re
+    _RR_EXAMPLES = [
+        "penalty for delivery delays beyond 60 days",
+        "force majeure waiver notification",
+        "net-60 early payment discount",
+        "grace period late delivery accrual",
+    ]
+    _rcols = st.columns(len(_RR_EXAMPLES))
+    for _i, _eq in enumerate(_RR_EXAMPLES):
+        if _rcols[_i].button(_eq, key=f"rr_ex_{_i}", use_container_width=True):
+            st.session_state["rr_query"] = _eq
+            st.rerun()
 
-        def _tokenize(text):
-            return set(_re.findall(r'\b\w+\b', text.lower()))
+    _active_q = st.text_input(
+        "Query",
+        key="rr_query",
+        label_visibility="collapsed",
+        placeholder="Type a procurement contract query…",
+    )
 
-        def _jaccard_rerank(query, chunks):
-            qtoks = _tokenize(query)
-            scored = []
-            for c in chunks:
-                ctoks = _tokenize(c["content"])
-                j = len(qtoks & ctoks) / len(qtoks | ctoks) if (qtoks | ctoks) else 0
-                scored.append({**c, "sim_ce_score": round((j * 6.0) - 3.0, 3)})
-            return sorted(scored, key=lambda x: x["sim_ce_score"], reverse=True)
+    _aq_display = _active_q if _active_q else "(empty)"
+    st.markdown(
+        '<div style="background:#1a1d2e;border:1px solid #4a9eff33;border-radius:8px;'
+        'padding:10px 14px;margin:8px 0 16px;font-size:13px">'
+        '<span style="font-size:10px;color:#4a9eff;font-weight:700;letter-spacing:1px;margin-right:10px">'
+        'ACTIVE QUERY</span>' + _aq_display + "</div>",
+        unsafe_allow_html=True,
+    )
 
-        reranked_live = _jaccard_rerank(user_query, RERANK_CHUNKS)
-        rrf_order_ids = [c["chunk_id"] for c in RERANK_CHUNKS]
-        ce_order_ids  = [c["chunk_id"] for c in reranked_live]
+    # ── Jaccard-based CE simulation ───────────────────────────────────────────
+    import re as _re_rr
 
-        # Show side-by-side comparison
-        l, r = st.columns(2)
-        with l:
-            st.markdown('<div style="font-size:10px;color:#ff4b4b;font-weight:700;letter-spacing:1px;margin-bottom:8px">RRF ORDER (FIXED)</div>', unsafe_allow_html=True)
-            for i, cid in enumerate(rrf_order_ids):
-                chunk = next(c for c in RERANK_CHUNKS if c["chunk_id"] == cid)
-                st.markdown(f'<div style="font-size:12px;padding:7px 10px;border-radius:6px;background:#1a1d2e;border:1px solid #2d3250;margin:3px 0">#{i+1} — {chunk["label"]}</div>', unsafe_allow_html=True)
+    def _rr_tok(t):
+        return set(_re_rr.findall(r'\b\w+\b', t.lower()))
 
-        with r:
-            st.markdown('<div style="font-size:10px;color:#21c354;font-weight:700;letter-spacing:1px;margin-bottom:8px">RERANKED ORDER (LIVE)</div>', unsafe_allow_html=True)
-            for i, chunk in enumerate(reranked_live):
-                rrf_pos = rrf_order_ids.index(chunk["chunk_id"]) + 1
-                moved = rrf_pos - (i + 1)
-                arrow = f' <span style="color:#21c354">▲{moved}</span>' if moved > 0 else (f' <span style="color:#ff4b4b">▼{abs(moved)}</span>' if moved < 0 else '')
-                score_color = "#21c354" if chunk["sim_ce_score"] > 0 else "#ff4b4b"
-                st.markdown(f'<div style="font-size:12px;padding:7px 10px;border-radius:6px;background:#1a1d2e;border:1px solid #2d3250;margin:3px 0;display:flex;justify-content:space-between">#{i+1} — {chunk["label"]}{arrow}<span style="font-family:monospace;color:{score_color};font-size:11px">{chunk["sim_ce_score"]:+.3f}</span></div>', unsafe_allow_html=True)
+    def _rr_jaccard(q, doc):
+        qt, dt = _rr_tok(q), _rr_tok(doc)
+        u = qt | dt
+        return len(qt & dt) / len(u) if u else 0.0
+
+    _rrf_ids = [c["chunk_id"] for c in RERANK_CHUNKS]
+    _scored_chunks = []
+    for _c in RERANK_CHUNKS:
+        _j = _rr_jaccard(_active_q or "", _c["content"])
+        _scored_chunks.append({**_c, "sim_score": round((_j * 6.0) - 3.0, 3)})
+
+    _ce_order = sorted(_scored_chunks, key=lambda x: x["sim_score"], reverse=True)
+    _ce_ids = [c["chunk_id"] for c in _ce_order]
+
+    # ── Before / After columns ────────────────────────────────────────────────
+    _col_b, _col_a = st.columns(2)
+
+    with _col_b:
+        st.markdown(
+            '<div style="font-size:10px;color:#ff4b4b;font-weight:700;letter-spacing:1px;margin-bottom:10px">'
+            "BEFORE RERANKING — RRF ORDER (FIXED)</div>",
+            unsafe_allow_html=True,
+        )
+        for _i, _chunk in enumerate(RERANK_CHUNKS):
+            _ce_rank_of_this = _ce_ids.index(_chunk["chunk_id"]) + 1
+            _is_rrf1_not_ce1 = (_i == 0) and (_ce_rank_of_this != 1)
+            _moved_in_ce = (_i + 1) - _ce_rank_of_this
+            if _moved_in_ce > 0:
+                _hint_html = '<span style="font-size:10px;color:#ff4b4b"> drops ▼' + str(_moved_in_ce) + '</span>'
+            elif _moved_in_ce < 0:
+                _hint_html = '<span style="font-size:10px;color:#21c354"> rises ▲' + str(abs(_moved_in_ce)) + '</span>'
+            else:
+                _hint_html = '<span style="font-size:10px;color:#4a9eff88"> stays ═</span>'
+            _bg_b = "#ff4b4b18" if _is_rrf1_not_ce1 else "#1a1d2e"
+            _bd_b = "#ff4b4b55" if _is_rrf1_not_ce1 else "#2d3250"
+            _rk_col = "#ff4b4b" if _is_rrf1_not_ce1 else "#4a9eff88"
+            _label_b = _chunk["label"]
+            _rrf_sc = _chunk["rrf_score"]
+            _content_b = _chunk["content"][:115]
+            st.markdown(
+                f'<div style="background:{_bg_b};border:1px solid {_bd_b};border-radius:8px;padding:12px;margin-bottom:8px">'
+                f'<div style="display:flex;justify-content:space-between;margin-bottom:6px">'
+                f'<div><span style="font-size:10px;font-weight:800;color:{_rk_col};letter-spacing:1px">RRF #{_i+1}</span>'
+                f'<span style="font-size:11px;font-weight:700;margin-left:6px">{_label_b}</span>'
+                f'{_hint_html}</div>'
+                f'<span style="font-size:10px;font-family:monospace;color:#4a9eff88">RRF {_rrf_sc:.4f}</span>'
+                f'</div>'
+                f'<div style="font-size:11px;opacity:.7;line-height:1.5">{_content_b}…</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    with _col_a:
+        st.markdown(
+            '<div style="font-size:10px;color:#21c354;font-weight:700;letter-spacing:1px;margin-bottom:10px">'
+            "AFTER RERANKING — CROSS-ENCODER (SIMULATED)</div>",
+            unsafe_allow_html=True,
+        )
+        for _i, _chunk in enumerate(_ce_order):
+            _rrf_pos = _rrf_ids.index(_chunk["chunk_id"]) + 1
+            _moved = _rrf_pos - (_i + 1)
+            if _moved > 0:
+                _arrow = '<span style="color:#21c354;font-weight:700">▲' + str(_moved) + '</span>'
+            elif _moved < 0:
+                _arrow = '<span style="color:#ff4b4b;font-weight:700">▼' + str(abs(_moved)) + '</span>'
+            else:
+                _arrow = '<span style="color:#4a9eff88">═</span>'
+            _is_top = _i == 0
+            _sc = _chunk["sim_score"]
+            _sc_col = "#21c354" if _sc > 0 else "#ff4b4b"
+            _bg_a = "#21c35412" if _is_top else "#1a1d2e"
+            _bd_a = "#21c35488" if _is_top else "#2d3250"
+            _shadow = ";box-shadow:0 0 12px #21c35422" if _is_top else ""
+            _rank_col_a = "#21c354" if _is_top else "#4a9eff88"
+            _promo = (
+                '<div style="font-size:10px;color:#21c354;font-weight:700;margin-top:6px">'
+                "Ranked #1 by cross-encoder</div>"
+            ) if _is_top else ""
+            _label_a = _chunk["label"]
+            _content_a = _chunk["content"][:115]
+            _sc_fmt = f"{_sc:+.3f}"
+            st.markdown(
+                f'<div style="background:{_bg_a};border:1px solid {_bd_a};border-radius:8px;padding:12px;margin-bottom:8px{_shadow}">'
+                f'<div style="display:flex;justify-content:space-between;margin-bottom:6px">'
+                f'<div><span style="font-size:10px;font-weight:800;color:{_rank_col_a};letter-spacing:1px">CE #{_i+1}</span>'
+                f' {_arrow} '
+                f'<span style="font-size:11px;font-weight:700;margin-left:4px">{_label_a}</span></div>'
+                f'<span style="font-size:10px;font-family:monospace;color:{_sc_col};font-weight:700">score {_sc_fmt}</span>'
+                f'</div>'
+                f'<div style="font-size:11px;opacity:.7;line-height:1.5">{_content_a}…</div>'
+                f'{_promo}</div>',
+                unsafe_allow_html=True,
+            )
 
     st.divider()
 
