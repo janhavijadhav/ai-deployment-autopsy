@@ -2,24 +2,25 @@
 Meridian Manufacturing Corp — Procurement Intelligence Agent
 ============================================================
 Interactive Streamlit demo for the AI Deployment Autopsy portfolio project.
+Uses Groq's free API (Llama 3.3 70B) — 1,000 free requests/day, no credit card.
 
 Run locally:
-    pip install streamlit anthropic
+    pip install streamlit groq
     streamlit run streamlit_app.py
 
 Deploy to Streamlit Cloud:
     1. Push this repo to GitHub
     2. Go to share.streamlit.io → New app → select this repo
-    3. Add ANTHROPIC_API_KEY in Settings → Secrets
+    3. Add GROQ_API_KEY in Settings → Secrets
+    Get a free key at: console.groq.com (no credit card needed)
 """
 
 from __future__ import annotations
 
 import json
 import time
-from typing import Generator
 
-import anthropic
+from groq import Groq, AuthenticationError as GroqAuthError
 import streamlit as st
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -367,12 +368,13 @@ with st.sidebar:
 
     # API key
     api_key = st.text_input(
-        "Anthropic API Key",
+        "Groq API Key (free)",
         type="password",
-        placeholder="sk-ant-...",
-        help="Get yours at console.anthropic.com",
-        value=st.secrets.get("ANTHROPIC_API_KEY", ""),
+        placeholder="gsk_...",
+        help="Free at console.groq.com — no credit card needed",
+        value=st.secrets.get("GROQ_API_KEY", ""),
     )
+    st.caption("🆓 Get a free key at [console.groq.com](https://console.groq.com)")
 
     st.markdown("---")
 
@@ -449,29 +451,33 @@ if page == "🤖 Agent Chat":
 
         # Stream response from Claude
         with st.chat_message("assistant", avatar="🏭"):
-            client = anthropic.Anthropic(api_key=api_key)
             message_placeholder = st.empty()
             full_response = ""
-
             start = time.time()
             try:
-                with client.messages.stream(
-                    model="claude-sonnet-4-6",
+                client = Groq(api_key=api_key)
+                stream = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
                     max_tokens=1024,
-                    system=SYSTEM_PROMPT,
                     messages=[
-                        {"role": m["role"], "content": m["content"]}
-                        for m in st.session_state["messages"]
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        *[
+                            {"role": m["role"], "content": m["content"]}
+                            for m in st.session_state["messages"]
+                        ],
                     ],
-                ) as stream:
-                    for text in stream.text_stream:
-                        full_response += text
+                    stream=True,
+                )
+                for chunk in stream:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        full_response += delta
                         message_placeholder.markdown(full_response + "▌")
                 latency = (time.time() - start) * 1000
                 message_placeholder.markdown(full_response)
-                st.caption(f"⚡ {latency:.0f}ms · claude-sonnet-4-6 · {len(full_response)} chars")
-            except anthropic.AuthenticationError:
-                st.error("Invalid API key. Check your key at console.anthropic.com.")
+                st.caption(f"⚡ {latency:.0f}ms · llama-3.3-70b-versatile (Groq) · {len(full_response)} chars")
+            except GroqAuthError:
+                st.error("Invalid API key. Get a free key at console.groq.com.")
                 st.stop()
             except Exception as e:
                 st.error(f"Error: {e}")

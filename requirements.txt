@@ -41,6 +41,7 @@ pydantic-settings>=2.6.0
 
 # ─── Streamlit Demo ─────────────────────────────────────────────────────────
 streamlit>=1.40.0
+groq>=0.11.0                  # Free API for Streamlit demo (Llama 3.3 70B)
 
 # ─── Dev / Testing ──────────────────────────────────────────────────────────────
 pytest>=8.3.0
