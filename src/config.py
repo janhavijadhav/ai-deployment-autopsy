@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     SCHEMA_SNAPSHOT_PATH: str = "data/schema_snapshots/"
     SCHEMA_ALERT_WEBHOOK: str = ""
 
+    # Reranker (cross-encoder — third RAG stage)
+    RERANKER_ENABLED: bool = True
+    RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
+    RERANKER_TOP_K: int = 5                  # Final results returned after reranking
+    RERANKER_CANDIDATE_MULTIPLIER: int = 4   # Fetch this many × top_k before reranking
+
     # Evals
     EVAL_FAITHFULNESS_THRESHOLD: float = 0.85
     EVAL_RELEVANCY_THRESHOLD: float = 0.80

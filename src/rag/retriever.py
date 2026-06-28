@@ -77,11 +77,21 @@ class HybridRetriever:
 
     RRF_K = 60
     TABLE_BOOST = 1.25
+    RERANK_CANDIDATE_MULTIPLIER = 4   # Fetch this many × top_k before reranking
 
-    def __init__(self):
+    def __init__(self, enable_reranking: bool = True):
         self._qdrant: AsyncQdrantClient | None = None
         self._bm25_index: BM25Okapi | None = None
         self._bm25_corpus: list[RetrievedChunk] = []
+        self._enable_reranking = enable_reranking
+        self._reranker = None
+        if enable_reranking:
+            try:
+                from src.rag.reranker import get_reranker
+                self._reranker = get_reranker()
+            except Exception:
+                # Graceful degradation: if reranker unavailable, fall back to RRF only
+                self._reranker = None
 
     async def _get_qdrant(self) -> AsyncQdrantClient:
         if self._qdrant is None:
@@ -98,6 +108,7 @@ class HybridRetriever:
         top_k: int = 5,
         dense_top_k: int = 20,
         sparse_top_k: int = 20,
+        rerank: bool | None = None,
     ) -> list[RetrievedChunk]:
         """
         Full hybrid retrieval pipeline:
@@ -105,16 +116,26 @@ class HybridRetriever:
         2. BM25 keyword search over same corpus
         3. Merge results via RRF
         4. Apply table boost
-        5. Return top_k
+        5. Cross-encoder rerank (if enabled) — returns top_k by semantic relevance
+        6. Return top_k
+
+        The reranker operates on top_k × RERANK_CANDIDATE_MULTIPLIER candidates,
+        so it sees a broader pool while still returning a tight top_k.
         """
+        use_reranker = (rerank if rerank is not None else self._enable_reranking) and self._reranker is not None
+
+        # Fetch more candidates when reranking so the cross-encoder has a bigger pool
+        candidate_k = top_k * self.RERANK_CANDIDATE_MULTIPLIER if use_reranker else top_k
+        fetch_k = max(candidate_k, dense_top_k)
+
         with tracer.span("retriever.hybrid") as span:
             span.set_attribute("query_len", len(query))
             span.set_attribute("supplier_filter", supplier_id or "none")
+            span.set_attribute("reranking_enabled", use_reranker)
 
-            # Parallel dense + sparse
             dense_results, sparse_results = await asyncio.gather(
-                self._dense_search(query, supplier_id, dense_top_k),
-                self._sparse_search(query, supplier_id, sparse_top_k),
+                self._dense_search(query, supplier_id, fetch_k),
+                self._sparse_search(query, supplier_id, fetch_k),
             )
 
             merged = self._reciprocal_rank_fusion(dense_results, sparse_results)
@@ -123,7 +144,30 @@ class HybridRetriever:
 
             span.set_attribute("dense_hits", len(dense_results))
             span.set_attribute("sparse_hits", len(sparse_results))
-            span.set_attribute("merged_hits", len(merged))
+            span.set_attribute("candidates_pre_rerank", len(merged))
+
+            if use_reranker:
+                with tracer.span("retriever.cross_encoder_rerank") as rerank_span:
+                    candidates = merged[:candidate_k]
+                    reranked = await self._reranker.rerank_async(query, candidates, top_k=top_k)
+                    rerank_span.set_attribute("candidates_in", len(candidates))
+                    rerank_span.set_attribute("results_out", len(reranked))
+
+                # Convert RerankResult back to RetrievedChunk for a uniform return type
+                results: list[RetrievedChunk] = []
+                for r in reranked:
+                    results.append(RetrievedChunk(
+                        chunk_id=r.chunk_id,
+                        content=r.content,
+                        score=r.cross_encoder_score,
+                        retrieval_method="cross_encoder_reranked",
+                        contract_id=r.contract_id,
+                        supplier_id=r.supplier_id,
+                        page_number=r.page_number,
+                        is_table=r.is_table,
+                        metadata={**r.metadata, "rrf_score": r.rrf_score},
+                    ))
+                return results
 
             return merged[:top_k]
 
