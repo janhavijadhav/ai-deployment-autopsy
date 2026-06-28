@@ -1,0 +1,51 @@
+# Dockerfile.mock — Mock Supplier REST API
+# =========================================
+# Builds a lightweight container running src/mock_supplier_api.py
+# Referenced by docker-compose.yml as the `supplier-mock` service.
+#
+# Usage:
+#   docker compose up supplier-mock
+#   curl http://localhost:8001/health
+#
+# Environment variables (all optional):
+#   TOKEN_TTL_SECONDS   — how long issued tokens are valid (default 3600)
+#   FAILURE_RATE        — fraction of requests that return 500 (default 0.0)
+#   LATENCY_MS          — simulated network delay per request (default 50)
+#   ROTATE_ON_USE       — set true to demo Failure 5 token-storm scenario
+#   SUPPLIER_CLIENT_ID  — OAuth2 client_id checked at /oauth/token
+#   SUPPLIER_CLIENT_SECRET — OAuth2 client_secret checked at /oauth/token
+
+FROM python:3.11-slim
+
+LABEL maintainer="Meridian Manufacturing FDE Team"
+LABEL description="Mock external supplier partner API for local dev/integration testing"
+
+# Security: run as non-root
+RUN groupadd --gid 1001 appgroup && \
+    useradd --uid 1001 --gid appgroup --no-create-home appuser
+
+WORKDIR /app
+
+# Install only what the mock needs — keep the image tiny
+COPY requirements.txt .
+RUN pip install --no-cache-dir \
+    fastapi==0.115.0 \
+    uvicorn[standard]==0.30.6 \
+    pydantic==2.9.2 \
+    httpx==0.27.2
+
+# Copy only the mock source file
+COPY src/mock_supplier_api.py ./src/mock_supplier_api.py
+
+USER appuser
+
+EXPOSE 8001
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"
+
+CMD ["python", "-m", "uvicorn", "src.mock_supplier_api:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8001", \
+     "--workers", "1", \
+     "--log-level", "info"]

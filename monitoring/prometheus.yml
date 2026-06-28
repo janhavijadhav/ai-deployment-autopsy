@@ -1,0 +1,33 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: "production"
+    project: "ai-deployment-autopsy"
+
+rule_files:
+  - "alerts.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+scrape_configs:
+  # Procurement Agent — custom metrics on port 9091
+  - job_name: "procurement_agent"
+    static_configs:
+      - targets: ["agent:9091"]
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # Qdrant vector store
+  - job_name: "qdrant"
+    static_configs:
+      - targets: ["qdrant:6333"]
+    metrics_path: /metrics
+
+  # Redis
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis:6379"]

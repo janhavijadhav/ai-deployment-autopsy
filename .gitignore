@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+.venv/
+venv/
+env/
+
+# Env
+.env
+.env.local
+
+# Data / DB
+data/*.duckdb
+data/*.db
+data/schema_snapshots/
+*.db-wal
+*.db-shm
+
+# Model cache
+.cache/
+models/
+
+# Qdrant local storage
+qdrant_storage/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+eval_results/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Grafana provisioning secrets
+monitoring/grafana/secret.ini
+
+# OS
+.DS_Store
+Thumbs.db
