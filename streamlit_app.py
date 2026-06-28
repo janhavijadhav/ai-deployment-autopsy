@@ -883,52 +883,25 @@ elif page == "Agent Delegation":
       <div class="fm-sub">Supervisor agent classifies every query and routes it to the right specialist — or fans out to multiple in parallel for cross-domain questions.</div>
     </div>""", unsafe_allow_html=True)
 
-    # ── Architecture diagram ────────────────────────────────────────────────────
-    st.markdown("""
-    <div style="background:#1a1d2e;border:1px solid #2d3250;border-radius:12px;padding:20px;margin-bottom:20px">
-      <div style="font-size:10px;color:#4a9eff;font-weight:700;letter-spacing:1.5px;margin-bottom:14px">LANGGRAPH TOPOLOGY</div>
-      <div style="display:flex;align-items:center;gap:0;justify-content:center;flex-wrap:wrap;gap:8px">
-
-        <div style="background:#4a9eff18;border:1.5px solid #4a9eff55;border-radius:8px;padding:10px 16px;text-align:center;min-width:100px">
-          <div style="font-size:9px;color:#4a9eff;font-weight:700;letter-spacing:1px">START</div>
-          <div style="font-size:11px;font-weight:700;margin-top:2px">User Query</div>
-        </div>
-
-        <div style="color:#4a9eff;font-size:18px;font-weight:300">→</div>
-
-        <div style="background:#ff990018;border:2px solid #ff9900;border-radius:8px;padding:10px 16px;text-align:center;min-width:110px">
-          <div style="font-size:9px;color:#ff9900;font-weight:700;letter-spacing:1px">SUPERVISOR</div>
-          <div style="font-size:11px;font-weight:700;margin-top:2px">Route Query</div>
-          <div style="font-size:9px;opacity:.5;margin-top:2px">classify + delegate</div>
-        </div>
-
-        <div style="color:#4a9eff;font-size:14px;font-weight:300">→ Send()</div>
-
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <div style="background:#4a9eff18;border:1px solid #4a9eff55;border-radius:6px;padding:7px 12px;text-align:center">
-            <div style="font-size:9px;color:#4a9eff;font-weight:700">CONTRACT ANALYST</div>
-            <div style="font-size:10px;opacity:.6">clauses · SLA · penalties</div>
-          </div>
-          <div style="background:#ff4b4b18;border:1px solid #ff4b4b55;border-radius:6px;padding:7px 12px;text-align:center">
-            <div style="font-size:9px;color:#ff4b4b;font-weight:700">SUPPLIER RISK</div>
-            <div style="font-size:10px;opacity:.6">risk · delivery · disputes</div>
-          </div>
-          <div style="background:#21c35418;border:1px solid #21c35455;border-radius:6px;padding:7px 12px;text-align:center">
-            <div style="font-size:9px;color:#21c354;font-weight:700">SPEND ANALYTICS</div>
-            <div style="font-size:10px;opacity:.6">spend · savings · forecast</div>
-          </div>
-        </div>
-
-        <div style="color:#4a9eff;font-size:14px;font-weight:300">→</div>
-
-        <div style="background:#21c35418;border:1.5px solid #21c35455;border-radius:8px;padding:10px 16px;text-align:center;min-width:100px">
-          <div style="font-size:9px;color:#21c354;font-weight:700;letter-spacing:1px">SYNTHESIZER</div>
-          <div style="font-size:11px;font-weight:700;margin-top:2px">Merge & END</div>
-          <div style="font-size:9px;opacity:.5;margin-top:2px">multi-specialist only</div>
-        </div>
-
-      </div>
-    </div>""", unsafe_allow_html=True)
+    # ── Architecture diagram (small independent calls — avoids Streamlit HTML escaping) ──
+    st.markdown('<div style="font-size:10px;color:#4a9eff;font-weight:700;letter-spacing:1.5px;margin-bottom:8px">LANGGRAPH TOPOLOGY</div>', unsafe_allow_html=True)
+    _dc1, _dc2, _dc3, _dc4, _dc5 = st.columns([2, 1, 3, 1, 2])
+    with _dc1:
+        st.markdown('<div style="background:#4a9eff18;border:1.5px solid #4a9eff55;border-radius:8px;padding:12px;text-align:center"><div style="font-size:9px;color:#4a9eff;font-weight:700;letter-spacing:1px">START</div><div style="font-size:13px;font-weight:700;margin-top:4px">User Query</div></div>', unsafe_allow_html=True)
+    with _dc2:
+        st.markdown('<div style="text-align:center;padding-top:18px;font-size:20px;color:#4a9eff;opacity:.7">→</div>', unsafe_allow_html=True)
+    with _dc3:
+        st.markdown('<div style="background:#ff990018;border:2px solid #ff9900;border-radius:8px;padding:12px;text-align:center;margin-bottom:8px"><div style="font-size:9px;color:#ff9900;font-weight:700;letter-spacing:1px">SUPERVISOR NODE</div><div style="font-size:13px;font-weight:700;margin-top:4px">classify_query()</div><div style="font-size:10px;opacity:.5;margin-top:2px">picks specialist(s) · returns Send()</div></div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:10px;opacity:.4;text-align:center;margin-bottom:6px">↓ conditional_edges → Send()</div>', unsafe_allow_html=True)
+        _sc1, _sc2, _sc3 = st.columns(3)
+        _sc1.markdown('<div style="background:#4a9eff18;border:1px solid #4a9eff55;border-radius:6px;padding:8px;text-align:center"><div style="font-size:9px;color:#4a9eff;font-weight:700">📄 CONTRACT</div><div style="font-size:9px;opacity:.5;margin-top:2px">clauses · SLA</div></div>', unsafe_allow_html=True)
+        _sc2.markdown('<div style="background:#ff4b4b18;border:1px solid #ff4b4b55;border-radius:6px;padding:8px;text-align:center"><div style="font-size:9px;color:#ff4b4b;font-weight:700">⚠️ RISK</div><div style="font-size:9px;opacity:.5;margin-top:2px">risk · delivery</div></div>', unsafe_allow_html=True)
+        _sc3.markdown('<div style="background:#21c35418;border:1px solid #21c35455;border-radius:6px;padding:8px;text-align:center"><div style="font-size:9px;color:#21c354;font-weight:700">📊 SPEND</div><div style="font-size:9px;opacity:.5;margin-top:2px">spend · KPIs</div></div>', unsafe_allow_html=True)
+    with _dc4:
+        st.markdown('<div style="text-align:center;padding-top:18px;font-size:20px;color:#4a9eff;opacity:.7">→</div>', unsafe_allow_html=True)
+    with _dc5:
+        st.markdown('<div style="background:#21c35418;border:1.5px solid #21c35455;border-radius:8px;padding:12px;text-align:center"><div style="font-size:9px;color:#21c354;font-weight:700;letter-spacing:1px">SYNTHESIZER NODE</div><div style="font-size:13px;font-weight:700;margin-top:4px">Merge + END</div><div style="font-size:10px;opacity:.5;margin-top:2px">multi-specialist only</div></div>', unsafe_allow_html=True)
+    st.markdown("")
 
     # ── Example queries ─────────────────────────────────────────────────────────
     EXAMPLE_QUERIES = [
