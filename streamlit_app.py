@@ -918,8 +918,7 @@ elif page == "Agent Delegation":
 
     ex_cols = st.columns(len(EXAMPLE_QUERIES))
     for i, (ex_q, _) in enumerate(EXAMPLE_QUERIES):
-        if ex_cols[i].button(ex_q[:30]+"…" if len(ex_q)>30 else ex_q,
-                             key=f"del_ex_{i}", use_container_width=True, help=ex_q):
+        if ex_cols[i].button(ex_q, key=f"del_ex_{i}", use_container_width=True):
             st.session_state["del_query_input"] = ex_q
             st.rerun()
 
