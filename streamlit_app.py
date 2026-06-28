@@ -913,15 +913,18 @@ elif page == "Agent Delegation":
     ]
 
     st.markdown("#### Run the Supervisor")
+    if "del_query_input" not in st.session_state:
+        st.session_state["del_query_input"] = "What are Apex's penalty clauses for late delivery?"
+
     ex_cols = st.columns(len(EXAMPLE_QUERIES))
     for i, (ex_q, _) in enumerate(EXAMPLE_QUERIES):
         if ex_cols[i].button(ex_q[:30]+"…" if len(ex_q)>30 else ex_q,
                              key=f"del_ex_{i}", use_container_width=True, help=ex_q):
-            st.session_state["del_query"] = ex_q
+            st.session_state["del_query_input"] = ex_q
+            st.rerun()
 
     user_del_q = st.text_input(
         "Or type your own query",
-        value=st.session_state.get("del_query", "What are Apex's penalty clauses for late delivery?"),
         key="del_query_input",
         label_visibility="collapsed",
         placeholder="Ask anything about contracts, suppliers, spend…",
