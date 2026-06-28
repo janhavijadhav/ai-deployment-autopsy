@@ -919,8 +919,8 @@ elif page == "Eval Observatory":
     ]
 
     adv_cases = ADVERSARIAL_FIXED if state == "fixed" else ADVERSARIAL_CASES
-    clean_rate = sum(1 for _, s, _ in [(c[0],c[1],c[2]) for c in CLEAN_CASES] if c[2]=="PASS") / len(CLEAN_CASES)
-    adv_rate   = sum(1 for c in adv_cases if c[2]=="PASS") / len(adv_cases)
+    clean_rate = sum(1 for c in CLEAN_CASES if c[1] == "PASS") / len(CLEAN_CASES)
+    adv_rate   = sum(1 for c in adv_cases if c[2] == "PASS") / len(adv_cases)
     prod_score = 0.89 if state == "fixed" else 0.61
 
     c1, c2, c3 = st.columns(3)
